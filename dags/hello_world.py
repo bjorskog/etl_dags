@@ -52,4 +52,4 @@ send_email_task = EmailOperator(
 
 # dummy_operator.set_downstream(hello_operator)
 
-dummy_operator << hello_operator << second_hello_operator << send_email_task
+dummy_operator >> hello_operator >> second_hello_operator >> send_email_task
