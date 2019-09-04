@@ -26,6 +26,12 @@ hello_operator = PythonOperator(
     dag=dag
     )
 
+second_hello_operator = PythonOperator(
+    task_id='another_hello_task',
+    python_callable=hello_function.another_hello,
+    dag=dag
+)
+
 # dummy_operator.set_downstream(hello_operator)
 
-dummy_operator >> hello_operator
+dummy_operator >> hello_operator >> second_hello_operator
