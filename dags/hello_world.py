@@ -26,6 +26,6 @@ hello_operator = PythonOperator(
     dag=dag
     )
 
-dummy_operator.set_downstream(hello_operator)
+# dummy_operator.set_downstream(hello_operator)
 
-# dummy_operator >> hello_operator
+dummy_operator >> hello_operator
