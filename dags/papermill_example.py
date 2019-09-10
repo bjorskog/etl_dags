@@ -4,53 +4,69 @@ Using Papermill to run a Jupyter-notebook
 using Airflow
 """
 
-import os
+
+from typing import Dict
+from datetime import datetime
+
 import papermill as pm
-from datetime import datetime, timedelta
+
 from airflow import DAG
-from airflow.operators.python_operator import PythonOperator
+from airflow.models import BaseOperator
+from airflow.lineage.datasets import DataSet
+from airflow.utils.decorators import apply_defaults
 
-def execute_python_notebook_task(**context):
-    notebook_path = context['notebook_path']
-    out_path = context['out_path']
-    out_dir = os.path.dirname(out_path)
-    statement_parameters = context['statement_parameters'] if 'statement_parameters' in context else None
 
-    if not os.path.exists(out_dir):
-        os.makedirs(out_dir)
 
-    if callable(statement_parameters):
-        statement_parameters = statement_parameters(context)
+class NoteBook(DataSet):
+    type_name = "jupyter_notebook"
+    attributes = ['location', 'parameters']
 
-    pm.execute_notebook(
-        notebook_path,
-        out_path,
-        parameters=statement_parameters
-    )
 
-seven_days_ago = datetime.combine(
-    datetime.today() - timedelta(7),
-    datetime.min.time()
+class PapermillOperator(BaseOperator):
+    """
+    Executes a jupyter notebook through papermill that is annotated with parameters
+    :param input_nb: input notebook (can also be a NoteBook or a File inlet)
+    :type input_nb: str
+    :param output_nb: output notebook (can also be a NoteBook or File outlet)
+    :type output_nb: str
+    :param parameters: the notebook parameters to set
+    :type parameters: dict
+    """
+    @apply_defaults
+    def __init__(self,
+                 input_nb: str,
+                 output_nb: str,
+                 parameters: Dict,
+                 *args, **kwargs) -> None:
+        super().__init__(*args, **kwargs)
+
+        self.inlets.append(NoteBook(qualified_name=input_nb,
+                                    location=input_nb,
+                                    parameters=parameters))
+        self.outlets.append(NoteBook(qualified_name=output_nb,
+                                     location=output_nb))
+
+    def execute(self, context):
+        for i in range(len(self.inlets)):
+            pm.execute_notebook(self.inlets[i].location, self.outlets[i].location,
+                                parameters=self.inlets[i].parameters,
+                                progress_bar=False, report_mode=True)
+
+
+
+dag = DAG(
+    'papermill_example',
+    description='Running a Notebook',
+    schedule_interval='0 12 * * *',
+    start_date=datetime(2017, 3, 20),
+    catchup=False
 )
 
-default_args = {
-    'owner': 'airflow',
-    'start_date': seven_days_ago,
-    'provide_context': True,
-}
 
-dag_name = 'runnin_notebooks_yo'
-schedule_interval = '@monthly'
-
-with DAG(dag_name, default_args=default_args, schedule_interval=schedule_interval) as dag:
-    run_some_notebook_task = PythonOperator(
-        task_id='run_some_notebook_task',
-        python_callable=execute_python_notebook_task,
-        op_kwargs={
-            'notebook_path': 'gs://insr-notebooks-storage/example.ipynb',
-            'out_path': 'gs://insr-notebooks-storage/example.ipynb',
-            'statement_parameters': {
-                'a': 120
-            }
-        }
-    )
+run_this = PapermillOperator(
+    task_id="run_example_notebook",
+    dag=dag,
+    input_nb='gs://insr-notebooks-storage/example.ipynb',
+    output_nb='gs://insr-notebooks-storage/example.ipynb',
+    parameters={"a": 120}
+)
